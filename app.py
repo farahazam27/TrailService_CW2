@@ -13,6 +13,7 @@ DB_DATABASE = 'MAL2018'
 DB_USERNAME = 'SA' 
 DB_PASSWORD = 'C0mp2001!' 
 
+# Using SQL Server driver
 conn_str = f'DRIVER={{SQL Server}};SERVER={DB_SERVER};DATABASE={DB_DATABASE};UID={DB_USERNAME};PWD={DB_PASSWORD}'
 
 # 2. SWAGGER / API SETUP
@@ -25,9 +26,12 @@ api = Api(app,
 
 ns = api.namespace('trails', description='Trail operations')
 
-# 3. DATA MODELS 
+# 3. DATA MODELS
 
+# MODEL 1:  CREATE & UPDATE 
 trail_model = api.model('Trail', {
+    'Email': fields.String(required=True, description='University Email (e.g. ada@plymouth.ac.uk)'),
+    'Password': fields.String(required=True, description='University Password'),
     'Trail_Name': fields.String(required=True, description='Name of the trail'),
     'Description': fields.String(description='Trail description'),
     'Length_km': fields.Float(required=True, description='Length in KM'),
@@ -38,7 +42,13 @@ trail_model = api.model('Trail', {
     'User_ID': fields.Integer(required=True, description='ID of the user creating the trail')
 })
 
-# 4. HELPER FUNCTION: DATABASE CONNECTION
+# MODEL 2: DELETE
+auth_model = api.model('AuthOnly', {
+    'Email': fields.String(required=True, description='University Email'),
+    'Password': fields.String(required=True, description='University Password')
+})
+
+# 4. HELPER FUNCTIONS
 
 def get_db_connection():
     try:
@@ -48,13 +58,37 @@ def get_db_connection():
         print(f"Database connection failed: {e}")
         return None
 
+def check_auth(json_data):
+    """Reusable function to check University Auth"""
+    user_email = json_data.get('Email')
+    user_password = json_data.get('Password')
+    
+    if not user_email or not user_password:
+         return False, "Email and Password are required."
+
+    auth_url = "https://web.socem.plymouth.ac.uk/COMP2001/auth/api/users"
+    credentials = {"email": user_email, "password": user_password}
+    
+    try:
+        response = requests.post(auth_url, json=credentials)
+        if response.status_code != 200:
+            return False, "Authentication Failed! Invalid credentials."
+        
+        verified_user = response.json()
+        if verified_user[1] != 'True': 
+             return False, "Authentication Failed!"
+             
+        return True, "Success"
+    except Exception as e:
+        return False, f"Service Error: {str(e)}"
+
 # 5. ROUTES
 
 @ns.route('/')
 class TrailList(Resource):
     @ns.doc('list_trails')
     def get(self):
-        """List all trails"""
+        """List all trails (Public - No Auth needed)"""
         conn = get_db_connection()
         if not conn:
             return {"error": "Database connection failed"}, 500
@@ -62,19 +96,15 @@ class TrailList(Resource):
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT * FROM CW2.TrailDetailsView") 
-            
             trails = []
             columns = [column[0] for column in cursor.description]
-            
             for row in cursor.fetchall():
                 row_dict = dict(zip(columns, row))
 
                 for key, value in row_dict.items():
                     if isinstance(value, Decimal):
                         row_dict[key] = float(value)
-                        
                 trails.append(row_dict)
-            
             return trails, 200
         except Exception as e:
             return {"error": str(e)}, 500
@@ -87,26 +117,12 @@ class TrailList(Resource):
         """Create a new trail (Authentication Required)"""
         data = request.json
         
-        # --- LSEP: AUTHENTICATION CHECK ---
-        auth_url = "https://web.socem.plymouth.ac.uk/COMP2001/auth/api/users"
-        credentials = {
-            "email": "grace@plymouth.ac.uk", 
-            "password": "ISAD123!"
-        }
-        
-        try:
-            response = requests.post(auth_url, json=credentials)
-            if response.status_code != 200:
-                return {"message": "Authentication Failed! Invalid credentials."}, 401
-            
-            verified_user = response.json()
-            if verified_user[1] != 'True': 
-                 return {"message": "Authentication Failed!"}, 401
+        # 1. SECURITY CHECK
+        is_valid, message = check_auth(data)
+        if not is_valid:
+            return {"message": message}, 401
 
-        except Exception as e:
-            return {"error": f"Authentication Service Error: {str(e)}"}, 500
-
-        # --- DATABASE INSERT ---
+        # 2. DATABASE INSERT
         conn = get_db_connection()
         if not conn:
             return {"error": "Database connection failed"}, 500
@@ -116,14 +132,9 @@ class TrailList(Resource):
             cursor.execute("""
                 EXEC CW2.AddTrail ?, ?, ?, ?, ?, ?, ?, ?
             """, 
-            data['User_ID'], 
-            data['Difficulty_ID'], 
-            data['RouteType_ID'], 
-            data['Trail_Name'], 
-            data['Description'], 
-            data['Length_km'], 
-            data['Start_Location'], 
-            data['End_Location']
+            data['User_ID'], data['Difficulty_ID'], data['RouteType_ID'], 
+            data['Trail_Name'], data['Description'], data['Length_km'], 
+            data['Start_Location'], data['End_Location']
             )
             conn.commit()
             return {'message': 'Trail created successfully'}, 201
@@ -138,24 +149,21 @@ class TrailList(Resource):
 class Trail(Resource):
     @ns.doc('get_trail')
     def get(self, id):
-        """Fetch a trail given its identifier"""
+        """Fetch a trail (Public - No Auth needed)"""
         conn = get_db_connection()
         if not conn:
             return {"error": "Database connection failed"}, 500
-            
         cursor = conn.cursor()
         try:
             cursor.execute("EXEC CW2.GetTrail ?", id)
             row = cursor.fetchone()
-            
             if row:
                 columns = [column[0] for column in cursor.description]
                 result = dict(zip(columns, row))
-                
+    
                 for key, value in result.items():
                     if isinstance(value, Decimal):
                         result[key] = float(value)
-
                 return result, 200
             else:
                 return {'message': 'Trail not found'}, 404
@@ -167,32 +175,30 @@ class Trail(Resource):
     @ns.doc('update_trail')
     @ns.expect(trail_model)
     def put(self, id):
-        """Update a trail given its identifier"""
+        """Update a trail (Authentication Required)"""
         data = request.json
+
+        # 1. SECURITY CHECK 
+        is_valid, message = check_auth(data)
+        if not is_valid:
+            return {"message": message}, 401
+
         conn = get_db_connection()
         if not conn:
             return {"error": "Database connection failed"}, 500
-            
         cursor = conn.cursor()
         try:
-            # 1. Check if the trail exists
             cursor.execute("SELECT Trail_ID FROM CW2.Trail WHERE Trail_ID = ?", id)
             if not cursor.fetchone():
                 return {'message': 'Trail not found'}, 404
 
-            # 2. Update the trail
             cursor.execute("""
                 EXEC CW2.UpdateTrail ?, ?, ?, ?, ?, ?, ?, ?, ?
             """, 
             id,                     
-            data['Trail_Name'],    
-            data['Description'],    
-            data['Length_km'],      
-            data['Start_Location'], 
-            data['End_Location'],   
-            data['Difficulty_ID'],  
-            data['RouteType_ID'],   
-            data['User_ID']         
+            data['Trail_Name'], data['Description'], data['Length_km'],      
+            data['Start_Location'], data['End_Location'], data['Difficulty_ID'],  
+            data['RouteType_ID'], data['User_ID']         
             )
             conn.commit()
             return {'message': 'Trail updated successfully'}, 200
@@ -202,12 +208,23 @@ class Trail(Resource):
             conn.close()
 
     @ns.doc('delete_trail')
+    @ns.expect(auth_model) 
     def delete(self, id):
-        """Delete a trail given its identifier"""
+        """Delete a trail (Authentication Required)"""
+        data = request.json
+
+        # 1. SECURITY CHECK
+        # Check if data exists 
+        if not data:
+             return {"message": "Authentication required. Please provide Email and Password."}, 400
+
+        is_valid, message = check_auth(data)
+        if not is_valid:
+            return {"message": message}, 401
+
         conn = get_db_connection()
         if not conn:
             return {"error": "Database connection failed"}, 500
-            
         cursor = conn.cursor()
         try:
             cursor.execute("EXEC CW2.DeleteTrail ?", id)
