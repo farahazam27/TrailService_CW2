@@ -25,10 +25,10 @@ api = Api(app,
           description='A micro-service for managing hiking trails',
           doc='/swagger') # The documentation will be at http://localhost:5000/swagger
 
-# Namespace (keeps things organized)
+# Namespace
 ns = api.namespace('trails', description='Trail operations')
 
-# 3. DATA MODELS (For Swagger Documentation)
+# 3. DATA MODELS 
 
 trail_model = api.model('Trail', {
     'Trail_Name': fields.String(required=True, description='Name of the trail'),
@@ -51,7 +51,7 @@ def get_db_connection():
         print(f"Database connection failed: {e}")
         return None
 
-# 5. ROUTES (ENDPOINTS)
+# 5. ROUTES
 
 @ns.route('/')
 class TrailList(Resource):
