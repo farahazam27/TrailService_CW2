@@ -170,6 +170,44 @@ class Trail(Resource):
             return {"error": str(e)}, 500
         finally:
             conn.close()
+        
+    @ns.doc('update_trail')
+    @ns.expect(trail_model)
+    def put(self, id):
+        """Update a trail given its identifier"""
+        data = request.json
+        conn = get_db_connection()
+        if not conn:
+            return {"error": "Database connection failed"}, 500
+            
+        cursor = conn.cursor()
+        try:
+            # 1. Check if the trail exists
+            cursor.execute("SELECT Trail_ID FROM CW2.Trail WHERE Trail_ID = ?", id)
+            if not cursor.fetchone():
+                return {'message': 'Trail not found'}, 404
+
+            # 2. Update the trail
+            # We match the 9 parameters from your SQL Screenshot
+            cursor.execute("""
+                EXEC CW2.UpdateTrail ?, ?, ?, ?, ?, ?, ?, ?, ?
+            """, 
+            id,                     
+            data['Trail_Name'],    
+            data['Description'],    
+            data['Length_km'],      
+            data['Start_Location'], 
+            data['End_Location'],  
+            data['Difficulty_ID'],  
+            data['RouteType_ID'],   
+            data['User_ID']         
+            )
+            conn.commit()
+            return {'message': 'Trail updated successfully'}, 200
+        except Exception as e:
+            return {"error": str(e)}, 500
+        finally:
+            conn.close()
 
     @ns.doc('delete_trail')
     def delete(self, id):
