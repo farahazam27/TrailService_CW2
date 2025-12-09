@@ -6,16 +6,14 @@ from decimal import Decimal
 
 app = Flask(__name__)
 
-# 1. CONFIGURATION
+# 1. CONFIGURATION 
 
 DB_SERVER = 'localhost'
 DB_DATABASE = 'MAL2018'
-DB_USERNAME = 'SA'  
+DB_USERNAME = 'SA' 
 DB_PASSWORD = 'C0mp2001!' 
 
-# Connection String
 conn_str = f'DRIVER={{SQL Server}};SERVER={DB_SERVER};DATABASE={DB_DATABASE};UID={DB_USERNAME};PWD={DB_PASSWORD}'
-
 
 # 2. SWAGGER / API SETUP
 
@@ -23,9 +21,8 @@ api = Api(app,
           version='1.0', 
           title='Trail Service API (CW2)', 
           description='A micro-service for managing hiking trails',
-          doc='/swagger') # The documentation will be at http://localhost:5000/swagger
+          doc='/swagger') 
 
-# Namespace
 ns = api.namespace('trails', description='Trail operations')
 
 # 3. DATA MODELS 
@@ -70,10 +67,8 @@ class TrailList(Resource):
             columns = [column[0] for column in cursor.description]
             
             for row in cursor.fetchall():
-                # Create a dictionary for the row
                 row_dict = dict(zip(columns, row))
-                
-                # LOOP through the data and convert any Decimals to float
+
                 for key, value in row_dict.items():
                     if isinstance(value, Decimal):
                         row_dict[key] = float(value)
@@ -92,8 +87,7 @@ class TrailList(Resource):
         """Create a new trail (Authentication Required)"""
         data = request.json
         
-        # AUTHENTICATION CHECK 
-        
+        # --- LSEP: AUTHENTICATION CHECK ---
         auth_url = "https://web.socem.plymouth.ac.uk/COMP2001/auth/api/users"
         credentials = {
             "email": "grace@plymouth.ac.uk", 
@@ -101,23 +95,18 @@ class TrailList(Resource):
         }
         
         try:
-            # Talk to the University API
             response = requests.post(auth_url, json=credentials)
-           
             if response.status_code != 200:
                 return {"message": "Authentication Failed! Invalid credentials."}, 401
             
-            # Double check the verification status in the response list
             verified_user = response.json()
             if verified_user[1] != 'True': 
                  return {"message": "Authentication Failed!"}, 401
 
         except Exception as e:
-            # If the Uni server is down or we have no internet
             return {"error": f"Authentication Service Error: {str(e)}"}, 500
 
-        # DATABASE INSERT (Only happens if Auth passes)
-   
+        # --- DATABASE INSERT ---
         conn = get_db_connection()
         if not conn:
             return {"error": "Database connection failed"}, 500
@@ -156,13 +145,17 @@ class Trail(Resource):
             
         cursor = conn.cursor()
         try:
-            # Using the Stored Procedure from CW1/CW2
             cursor.execute("EXEC CW2.GetTrail ?", id)
             row = cursor.fetchone()
             
             if row:
                 columns = [column[0] for column in cursor.description]
                 result = dict(zip(columns, row))
+                
+                for key, value in result.items():
+                    if isinstance(value, Decimal):
+                        result[key] = float(value)
+
                 return result, 200
             else:
                 return {'message': 'Trail not found'}, 404
@@ -188,7 +181,6 @@ class Trail(Resource):
                 return {'message': 'Trail not found'}, 404
 
             # 2. Update the trail
-            # We match the 9 parameters from your SQL Screenshot
             cursor.execute("""
                 EXEC CW2.UpdateTrail ?, ?, ?, ?, ?, ?, ?, ?, ?
             """, 
@@ -197,7 +189,7 @@ class Trail(Resource):
             data['Description'],    
             data['Length_km'],      
             data['Start_Location'], 
-            data['End_Location'],  
+            data['End_Location'],   
             data['Difficulty_ID'],  
             data['RouteType_ID'],   
             data['User_ID']         
