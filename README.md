@@ -1,4 +1,4 @@
-# TrailService API (COMP2001 CW2)
+# TrailService API (MAL2018 CW2)
 
 **Student ID:** BSCS2509261
 **Module:** Information Management & Retrieval
