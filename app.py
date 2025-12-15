@@ -213,7 +213,6 @@ class Trail(Resource):
         """Delete a trail (Authentication Required)"""
         data = request.json
 
-        # 1. SECURITY CHECK
         # Check if data exists 
         if not data:
              return {"message": "Authentication required. Please provide Email and Password."}, 400
